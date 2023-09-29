@@ -24,7 +24,7 @@ use rp2040_hal::{
     gpio::Pins,
     pac,
     pac::interrupt,
-    timer::{Alarm, Alarm0, Alarm1, Alarm2, Timer},
+    timer::{Alarm, Alarm0, Alarm1, Alarm2, Alarm3, Timer},
     uart::{DataBits, StopBits, UartConfig, UartPeripheral},
     watchdog::Watchdog,
     Clock, Sio, I2C,
@@ -37,20 +37,26 @@ use types::{I2CType, RotaryEncoder1Type, RotaryEncoder2Type, UartType};
 
 const ENCODER_POLL_FREQUENCY: MicrosDurationU32 = MicrosDurationU32::millis(2);
 
-type DACAlarm = rp2040_hal::timer::Alarm0;
-static mut DAC_ALARM: Mutex<RefCell<Option<DACAlarm>>> = Mutex::new(RefCell::new(None));
-
-type DACType = MCP4725<I2CType>;
-static mut DAC: Mutex<RefCell<Option<DACType>>> = Mutex::new(RefCell::new(None));
-
 static mut UART1_INST: Mutex<RefCell<Option<UartType>>> = Mutex::new(RefCell::new(None));
 
-static mut ROTARY_ENCODER_1: Mutex<RefCell<Option<RotaryEncoder1Type>>> =
-    Mutex::new(RefCell::new(None));
-static mut ROTARY_ENCODER_2: Mutex<RefCell<Option<RotaryEncoder2Type>>> =
-    Mutex::new(RefCell::new(None));
-static mut ENCODER_1_POLL_ALARM: Mutex<RefCell<Option<Alarm1>>> = Mutex::new(RefCell::new(None));
-static mut ENCODER_2_POLL_ALARM: Mutex<RefCell<Option<Alarm2>>> = Mutex::new(RefCell::new(None));
+static ALARM_DEFAULT_DURATION_US: u32 = 10;
+
+static mut ALARM_0_DURATION: Mutex<RefCell<Option<MicrosDurationU32>>> = Mutex::new(RefCell::new(
+    Some(MicrosDurationU32::micros(ALARM_DEFAULT_DURATION_US)),
+));
+static mut ALARM_1_DURATION: Mutex<RefCell<Option<MicrosDurationU32>>> = Mutex::new(RefCell::new(
+    Some(MicrosDurationU32::micros(ALARM_DEFAULT_DURATION_US)),
+));
+static mut ALARM_2_DURATION: Mutex<RefCell<Option<MicrosDurationU32>>> = Mutex::new(RefCell::new(
+    Some(MicrosDurationU32::micros(ALARM_DEFAULT_DURATION_US)),
+));
+static mut ALARM_3_DURATION: Mutex<RefCell<Option<MicrosDurationU32>>> = Mutex::new(RefCell::new(
+    Some(MicrosDurationU32::micros(ALARM_DEFAULT_DURATION_US)),
+));
+static mut ALARM_0: Mutex<RefCell<Option<Alarm0>>> = Mutex::new(RefCell::new(None));
+static mut ALARM_1: Mutex<RefCell<Option<Alarm1>>> = Mutex::new(RefCell::new(None));
+static mut ALARM_2: Mutex<RefCell<Option<Alarm2>>> = Mutex::new(RefCell::new(None));
+static mut ALARM_3: Mutex<RefCell<Option<Alarm3>>> = Mutex::new(RefCell::new(None));
 
 #[entry]
 fn main() -> ! {
@@ -77,8 +83,14 @@ fn main() -> ! {
         pac::NVIC::unmask(pac::Interrupt::TIMER_IRQ_0);
         pac::NVIC::unmask(pac::Interrupt::TIMER_IRQ_1);
         pac::NVIC::unmask(pac::Interrupt::TIMER_IRQ_2);
+        pac::NVIC::unmask(pac::Interrupt::TIMER_IRQ_3);
         pac::NVIC::unmask(pac::Interrupt::UART1_IRQ);
     }
+
+    let mut alarm_0 = timer.alarm_0().unwrap();
+    let mut alarm_1 = timer.alarm_1().unwrap();
+    let mut alarm_2 = timer.alarm_2().unwrap();
+    let mut alarm_3 = timer.alarm_3().unwrap();
 
     let pins = Pins::new(pac.IO_BANK0, pac.PADS_BANK0, sio.gpio_bank0, &mut resets);
 
@@ -106,10 +118,6 @@ fn main() -> ! {
     uart.enable_rx_interrupt();
 
     // Rotary Encoders
-    let mut encoder_1_poll_alarm = timer.alarm_1().unwrap();
-    let mut encoder_2_poll_alarm = timer.alarm_2().unwrap();
-    encoder_1_poll_alarm.schedule(ENCODER_POLL_FREQUENCY);
-    encoder_2_poll_alarm.schedule(ENCODER_POLL_FREQUENCY);
     let rotary_1_dt = pins.gpio15.into_pull_up_input();
     let rotary_1_clk = pins.gpio14.into_pull_up_input();
     let rotary_2_dt = pins.gpio13.into_pull_up_input();
@@ -117,23 +125,19 @@ fn main() -> ! {
     let rotary_1 = RotaryEncoder::new(rotary_1_dt, rotary_1_clk).into_standard_mode();
     let rotary_2 = RotaryEncoder::new(rotary_2_dt, rotary_2_clk).into_standard_mode();
 
-    // Timer
-
     critical_section::with(|cs| {
-        unsafe { DAC.borrow(cs).replace(Some(dac)) };
-        unsafe { UART1_INST.borrow(cs).replace(Some(uart)) };
-        unsafe { ROTARY_ENCODER_1.borrow(cs).replace(Some(rotary_1)) };
-        unsafe { ROTARY_ENCODER_2.borrow(cs).replace(Some(rotary_2)) };
-        unsafe {
-            ENCODER_1_POLL_ALARM
-                .borrow(cs)
-                .replace(Some(encoder_1_poll_alarm));
-        }
-        unsafe {
-            ENCODER_2_POLL_ALARM
-                .borrow(cs)
-                .replace(Some(encoder_2_poll_alarm));
-        }
+        let alarm_0_duration = unsafe { ALARM_0_DURATION.borrow(cs).take().unwrap() };
+        let alarm_1_duration = unsafe { ALARM_1_DURATION.borrow(cs).take().unwrap() };
+        let alarm_2_duration = unsafe { ALARM_2_DURATION.borrow(cs).take().unwrap() };
+        let alarm_3_duration = unsafe { ALARM_3_DURATION.borrow(cs).take().unwrap() };
+        alarm_0.schedule(alarm_0_duration);
+        alarm_1.schedule(alarm_1_duration);
+        alarm_2.schedule(alarm_2_duration);
+        alarm_3.schedule(alarm_3_duration);
+        unsafe { ALARM_0.borrow(cs).replace(Some(alarm_0)) };
+        unsafe { ALARM_1.borrow(cs).replace(Some(alarm_1)) };
+        unsafe { ALARM_2.borrow(cs).replace(Some(alarm_2)) };
+        unsafe { ALARM_3.borrow(cs).replace(Some(alarm_3)) };
     });
 
     loop {}

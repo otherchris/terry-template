@@ -1,46 +1,54 @@
+use rp2040_hal::timer::Alarm;
+
 use crate::{
-    info, interrupt, singleton, Alarm, DAC, DAC_ALARM, ENCODER_1_POLL_ALARM, ENCODER_2_POLL_ALARM,
-    ROTARY_ENCODER_1, ROTARY_ENCODER_2, UART1_INST,
+    info, interrupt, singleton, ALARM_0, ALARM_0_DURATION, ALARM_1, ALARM_1_DURATION, ALARM_2,
+    ALARM_2_DURATION, ALARM_3, ALARM_3_DURATION, UART1_INST,
 };
-// Handle DAC_ALARM
+
 #[interrupt]
 fn TIMER_IRQ_0() {
     critical_section::with(|cs| {
-        let dac = unsafe { DAC.borrow(cs).take().unwrap() };
-        let mut dac_alarm = unsafe { DAC_ALARM.borrow(cs).take().unwrap() };
-        dac_alarm.clear_interrupt();
-
-        unsafe { DAC_ALARM.borrow(cs).replace(Some(dac_alarm)) };
-        unsafe { DAC.borrow(cs).replace(Some(dac)) };
+        let alarm_0_duration = unsafe { ALARM_0_DURATION.borrow(cs).take().unwrap() };
+        let mut alarm_0 = unsafe { ALARM_0.borrow(cs).take().unwrap() };
+        alarm_0.clear_interrupt();
+        alarm_0.schedule(alarm_0_duration);
+        unsafe { ALARM_0.borrow(cs).replace(Some(alarm_0)) };
+        info!("bing")
     });
 }
 
-// Rotary Encoder 1 Poll
 #[interrupt]
 fn TIMER_IRQ_1() {
     critical_section::with(|cs| {
-        let rotary = unsafe { ROTARY_ENCODER_1.borrow(cs).take().unwrap() };
-        let mut rotary_alarm = unsafe { ENCODER_1_POLL_ALARM.borrow(cs).take().unwrap() };
-        rotary_alarm.clear_interrupt();
-
-        unsafe { ROTARY_ENCODER_1.borrow(cs).replace(Some(rotary)) };
-        unsafe { ENCODER_1_POLL_ALARM.borrow(cs).replace(Some(rotary_alarm)) };
+        let alarm_1_duration = unsafe { ALARM_1_DURATION.borrow(cs).take().unwrap() };
+        let mut alarm_1 = unsafe { ALARM_1.borrow(cs).take().unwrap() };
+        alarm_1.clear_interrupt();
+        alarm_1.schedule(alarm_1_duration);
+        unsafe { ALARM_1.borrow(cs).replace(Some(alarm_1)) };
     });
 }
 
-// Rotary Encoder 2 Poll
 #[interrupt]
 fn TIMER_IRQ_2() {
     critical_section::with(|cs| {
-        let rotary = unsafe { ROTARY_ENCODER_2.borrow(cs).take().unwrap() };
-        let mut rotary_alarm = unsafe { ENCODER_2_POLL_ALARM.borrow(cs).take().unwrap() };
-        rotary_alarm.clear_interrupt();
-
-        unsafe { ROTARY_ENCODER_2.borrow(cs).replace(Some(rotary)) };
-        unsafe { ENCODER_2_POLL_ALARM.borrow(cs).replace(Some(rotary_alarm)) };
+        let alarm_2_duration = unsafe { ALARM_2_DURATION.borrow(cs).take().unwrap() };
+        let mut alarm_2 = unsafe { ALARM_2.borrow(cs).take().unwrap() };
+        alarm_2.clear_interrupt();
+        alarm_2.schedule(alarm_2_duration);
+        unsafe { ALARM_2.borrow(cs).replace(Some(alarm_2)) };
     });
 }
 
+#[interrupt]
+fn TIMER_IRQ_3() {
+    critical_section::with(|cs| {
+        let alarm_3_duration = unsafe { ALARM_3_DURATION.borrow(cs).take().unwrap() };
+        let mut alarm_3 = unsafe { ALARM_3.borrow(cs).take().unwrap() };
+        alarm_3.clear_interrupt();
+        alarm_3.schedule(alarm_3_duration);
+        unsafe { ALARM_3.borrow(cs).replace(Some(alarm_3)) };
+    });
+}
 //Handle UART data
 #[interrupt]
 fn UART1_IRQ() {
