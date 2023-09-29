@@ -7,13 +7,14 @@ use crate::{
 
 #[interrupt]
 fn TIMER_IRQ_0() {
+    info!("alarm 0 fired and caught");
     critical_section::with(|cs| {
         let alarm_0_duration = unsafe { ALARM_0_DURATION.borrow(cs).take().unwrap() };
         let mut alarm_0 = unsafe { ALARM_0.borrow(cs).take().unwrap() };
         alarm_0.clear_interrupt();
         alarm_0.schedule(alarm_0_duration);
         unsafe { ALARM_0.borrow(cs).replace(Some(alarm_0)) };
-        info!("bing")
+        unsafe { ALARM_0_DURATION.borrow(cs).replace(Some(alarm_0_duration)) };
     });
 }
 
@@ -23,8 +24,9 @@ fn TIMER_IRQ_1() {
         let alarm_1_duration = unsafe { ALARM_1_DURATION.borrow(cs).take().unwrap() };
         let mut alarm_1 = unsafe { ALARM_1.borrow(cs).take().unwrap() };
         alarm_1.clear_interrupt();
-        alarm_1.schedule(alarm_1_duration);
+        alarm_1.schedule(alarm_1_duration).ok();
         unsafe { ALARM_1.borrow(cs).replace(Some(alarm_1)) };
+        unsafe { ALARM_1_DURATION.borrow(cs).replace(Some(alarm_1_duration)) };
     });
 }
 
@@ -34,8 +36,9 @@ fn TIMER_IRQ_2() {
         let alarm_2_duration = unsafe { ALARM_2_DURATION.borrow(cs).take().unwrap() };
         let mut alarm_2 = unsafe { ALARM_2.borrow(cs).take().unwrap() };
         alarm_2.clear_interrupt();
-        alarm_2.schedule(alarm_2_duration);
+        alarm_2.schedule(alarm_2_duration).ok();
         unsafe { ALARM_2.borrow(cs).replace(Some(alarm_2)) };
+        unsafe { ALARM_2_DURATION.borrow(cs).replace(Some(alarm_2_duration)) };
     });
 }
 
@@ -45,8 +48,9 @@ fn TIMER_IRQ_3() {
         let alarm_3_duration = unsafe { ALARM_3_DURATION.borrow(cs).take().unwrap() };
         let mut alarm_3 = unsafe { ALARM_3.borrow(cs).take().unwrap() };
         alarm_3.clear_interrupt();
-        alarm_3.schedule(alarm_3_duration);
+        alarm_3.schedule(alarm_3_duration).ok();
         unsafe { ALARM_3.borrow(cs).replace(Some(alarm_3)) };
+        unsafe { ALARM_3_DURATION.borrow(cs).replace(Some(alarm_3_duration)) };
     });
 }
 //Handle UART data
