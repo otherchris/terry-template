@@ -8,11 +8,15 @@ use cortex_m::singleton;
 use critical_section::Mutex;
 use defmt::*;
 use defmt_rtt as _;
-use fugit::RateExtU32;
+use fugit::{MicrosDurationU32, RateExtU32};
 use mcp4725::*;
 use panic_probe as _;
 use rp2040_hal::{
     clocks::init_clocks_and_plls,
+    gpio::bank0::Gpio12,
+    gpio::bank0::Gpio13,
+    gpio::bank0::Gpio14,
+    gpio::bank0::Gpio15,
     gpio::bank0::Gpio16,
     gpio::bank0::Gpio17,
     gpio::bank0::Gpio8,
@@ -20,13 +24,18 @@ use rp2040_hal::{
     gpio::Pins,
     pac,
     pac::interrupt,
+    timer::{Alarm, Alarm0, Alarm1, Alarm2, Timer},
     uart::{DataBits, StopBits, UartConfig, UartPeripheral},
     watchdog::Watchdog,
     Clock, Sio, I2C,
 };
 use rp_pico::entry;
+mod interrupts;
 mod types;
-use types::{I2CType, UartType};
+use rotary_encoder_embedded::{standard::StandardMode, Direction, RotaryEncoder};
+use types::{I2CType, RotaryEncoder1Type, RotaryEncoder2Type, UartType};
+
+const ENCODER_POLL_FREQUENCY: MicrosDurationU32 = MicrosDurationU32::millis(2);
 
 type DACAlarm = rp2040_hal::timer::Alarm0;
 static mut DAC_ALARM: Mutex<RefCell<Option<DACAlarm>>> = Mutex::new(RefCell::new(None));
@@ -35,6 +44,13 @@ type DACType = MCP4725<I2CType>;
 static mut DAC: Mutex<RefCell<Option<DACType>>> = Mutex::new(RefCell::new(None));
 
 static mut UART1_INST: Mutex<RefCell<Option<UartType>>> = Mutex::new(RefCell::new(None));
+
+static mut ROTARY_ENCODER_1: Mutex<RefCell<Option<RotaryEncoder1Type>>> =
+    Mutex::new(RefCell::new(None));
+static mut ROTARY_ENCODER_2: Mutex<RefCell<Option<RotaryEncoder2Type>>> =
+    Mutex::new(RefCell::new(None));
+static mut ENCODER_1_POLL_ALARM: Mutex<RefCell<Option<Alarm1>>> = Mutex::new(RefCell::new(None));
+static mut ENCODER_2_POLL_ALARM: Mutex<RefCell<Option<Alarm2>>> = Mutex::new(RefCell::new(None));
 
 #[entry]
 fn main() -> ! {
@@ -55,9 +71,12 @@ fn main() -> ! {
     )
     .ok()
     .unwrap();
+    let mut timer = Timer::new(pac.TIMER, &mut resets, &clocks);
 
     unsafe {
         pac::NVIC::unmask(pac::Interrupt::TIMER_IRQ_0);
+        pac::NVIC::unmask(pac::Interrupt::TIMER_IRQ_1);
+        pac::NVIC::unmask(pac::Interrupt::TIMER_IRQ_2);
         pac::NVIC::unmask(pac::Interrupt::UART1_IRQ);
     }
 
@@ -86,38 +105,36 @@ fn main() -> ! {
         .unwrap();
     uart.enable_rx_interrupt();
 
+    // Rotary Encoders
+    let mut encoder_1_poll_alarm = timer.alarm_1().unwrap();
+    let mut encoder_2_poll_alarm = timer.alarm_2().unwrap();
+    encoder_1_poll_alarm.schedule(ENCODER_POLL_FREQUENCY);
+    encoder_2_poll_alarm.schedule(ENCODER_POLL_FREQUENCY);
+    let rotary_1_dt = pins.gpio15.into_pull_up_input();
+    let rotary_1_clk = pins.gpio14.into_pull_up_input();
+    let rotary_2_dt = pins.gpio13.into_pull_up_input();
+    let rotary_2_clk = pins.gpio12.into_pull_up_input();
+    let rotary_1 = RotaryEncoder::new(rotary_1_dt, rotary_1_clk).into_standard_mode();
+    let rotary_2 = RotaryEncoder::new(rotary_2_dt, rotary_2_clk).into_standard_mode();
+
+    // Timer
+
     critical_section::with(|cs| {
         unsafe { DAC.borrow(cs).replace(Some(dac)) };
         unsafe { UART1_INST.borrow(cs).replace(Some(uart)) };
+        unsafe { ROTARY_ENCODER_1.borrow(cs).replace(Some(rotary_1)) };
+        unsafe { ROTARY_ENCODER_2.borrow(cs).replace(Some(rotary_2)) };
+        unsafe {
+            ENCODER_1_POLL_ALARM
+                .borrow(cs)
+                .replace(Some(encoder_1_poll_alarm));
+        }
+        unsafe {
+            ENCODER_2_POLL_ALARM
+                .borrow(cs)
+                .replace(Some(encoder_2_poll_alarm));
+        }
     });
 
     loop {}
-}
-
-// Handle DAC_ALARM
-#[interrupt]
-fn TIMER_IRQ_0() {
-    critical_section::with(|cs| {
-        let dac = unsafe { DAC.borrow(cs).take().unwrap() };
-        let dac_alarm = unsafe { DAC_ALARM.borrow(cs).take().unwrap() };
-        // dac_alarm.clear_interrupt();
-
-        unsafe { DAC_ALARM.borrow(cs).replace(Some(dac_alarm)) };
-        unsafe { DAC.borrow(cs).replace(Some(dac)) };
-    });
-}
-
-//Handle UART data
-#[interrupt]
-fn UART1_IRQ() {
-    critical_section::with(|cs| {
-        let uart = unsafe { UART1_INST.borrow(cs).take().unwrap() };
-        info!("here go");
-        info!("{}", uart.uart_is_readable());
-        let buf = singleton!(: [u8; 5] = [0; 5]).unwrap();
-        uart.read_full_blocking(buf).unwrap();
-        info!("{}", buf);
-
-        unsafe { UART1_INST.borrow(cs).replace(Some(uart)) };
-    })
 }
