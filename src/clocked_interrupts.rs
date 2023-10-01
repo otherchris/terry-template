@@ -43,36 +43,6 @@ fn TIMER_IRQ_2() {
     });
 }
 
-#[interrupt]
-fn TIMER_IRQ_3() {
-    critical_section::with(|cs| {
-        let encoder_alarm_duration = unsafe { ENCODER_POLL_DURATION.borrow(cs).take().unwrap() };
-        let mut encoder_alarm = unsafe { ENCODER_POLL_ALARM.borrow(cs).take().unwrap() };
-        let mut encoder_1 = unsafe { ENCODER_1.borrow(cs).take().unwrap() };
-        encoder_alarm.clear_interrupt();
-        encoder_alarm.schedule(encoder_alarm_duration).ok();
-
-        encoder_1.update();
-        match encoder_1.direction() {
-            Direction::Clockwise => {
-                info!("Clockwise")
-            }
-            Direction::Anticlockwise => {
-                info!("AntiClockwise")
-            }
-            Direction::None => {
-                // info!("None")
-            }
-        }
-        unsafe { ENCODER_POLL_ALARM.borrow(cs).replace(Some(encoder_alarm)) };
-        unsafe {
-            ENCODER_POLL_DURATION
-                .borrow(cs)
-                .replace(Some(encoder_alarm_duration))
-        };
-        unsafe { ENCODER_1.borrow(cs).replace(Some(encoder_1)) };
-    });
-}
 //Handle UART data
 #[interrupt]
 fn UART1_IRQ() {

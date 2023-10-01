@@ -33,8 +33,10 @@ use rp2040_hal::{
 };
 use rp_pico::entry;
 use ssd1306::{mode::TerminalMode, prelude::*, I2CDisplayInterface, Ssd1306};
-mod interrupts;
+mod clocked_interrupts;
+mod encoder_interrupt;
 mod types;
+mod uart_interrupt;
 use rotary_encoder_embedded::{standard::StandardMode, Direction, RotaryEncoder};
 use types::{RotaryEncoder1Type, RotaryEncoder2Type, UartType};
 
