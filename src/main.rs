@@ -19,6 +19,8 @@ use rp2040_hal::{
     gpio::bank0::Gpio15,
     gpio::bank0::Gpio16,
     gpio::bank0::Gpio17,
+    gpio::bank0::Gpio20,
+    gpio::bank0::Gpio21,
     gpio::bank0::Gpio8,
     gpio::bank0::Gpio9,
     gpio::Pins,
@@ -30,10 +32,11 @@ use rp2040_hal::{
     Clock, Sio, I2C,
 };
 use rp_pico::entry;
+use ssd1306::{mode::TerminalMode, prelude::*, I2CDisplayInterface, Ssd1306};
 mod interrupts;
 mod types;
 use rotary_encoder_embedded::{standard::StandardMode, Direction, RotaryEncoder};
-use types::{I2CType, RotaryEncoder1Type, RotaryEncoder2Type, UartType};
+use types::{RotaryEncoder1Type, RotaryEncoder2Type, UartType};
 
 static mut UART1_INST: Mutex<RefCell<Option<UartType>>> = Mutex::new(RefCell::new(None));
 
@@ -91,9 +94,9 @@ fn main() -> ! {
     let pins = Pins::new(pac.IO_BANK0, pac.PADS_BANK0, sio.gpio_bank0, &mut resets);
 
     // I2C DAC
-    let dac_scl = pins.gpio17.into_function();
-    let dac_sda = pins.gpio16.into_function();
-    let dac_i2c = I2C::i2c0(
+    let dac_scl = pins.gpio21.into_function();
+    let dac_sda = pins.gpio20.into_function();
+    let i2c = I2C::new_controller(
         pac.I2C0,
         dac_sda,
         dac_scl,
@@ -101,8 +104,20 @@ fn main() -> ! {
         &mut resets,
         125_000_000.Hz(),
     );
-    let mut dac = MCP4725::new(dac_i2c, 0b010);
-    dac.set_dac(PowerDown::Normal, 0);
+
+    let mut dac = MCP4725::new(i2c, 0b010);
+    dac.set_dac(PowerDown::Normal, 0x0);
+    let i2c = dac.destroy();
+
+    let interface = I2CDisplayInterface::new(i2c);
+    let mut display =
+        Ssd1306::new(interface, DisplaySize128x32, DisplayRotation::Rotate0).into_terminal_mode();
+    display.init().unwrap();
+    display.clear();
+    display.print_char('b');
+    display.print_char('0');
+    display.print_char('l');
+    display.print_char('l');
 
     // UART0
     let uart_pins = (pins.gpio8.into_function(), pins.gpio9.into_function());
@@ -159,6 +174,7 @@ fn main() -> ! {
                 .replace(Some(encoder_poll_duration))
         };
         unsafe { ENCODER_1.borrow(cs).replace(Some(rotary_1)) };
+        unsafe { UART1_INST.borrow(cs).replace(Some(uart)) };
         info!("alarm globals replaced");
         info!("unmasking interrupts");
         unsafe {

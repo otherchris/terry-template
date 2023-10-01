@@ -80,9 +80,11 @@ fn UART1_IRQ() {
         let uart = unsafe { UART1_INST.borrow(cs).take().unwrap() };
         info!("here go");
         info!("{}", uart.uart_is_readable());
-        let buf = singleton!(: [u8; 5] = [0; 5]).unwrap();
-        uart.read_full_blocking(buf).unwrap();
-        info!("{}", buf);
+        if uart.uart_is_readable() {
+            let buf = singleton!(: [u8; 5] = [0; 5]).unwrap();
+            uart.read_full_blocking(buf).unwrap();
+            info!("{}", buf);
+        }
 
         unsafe { UART1_INST.borrow(cs).replace(Some(uart)) };
     })
