@@ -1,10 +1,4 @@
-use rotary_encoder_embedded::Direction;
-use rp2040_hal::timer::Alarm;
-
-use crate::{
-    info, interrupt, singleton, ALARM_0, ALARM_0_DURATION, ALARM_1, ALARM_1_DURATION, ALARM_2,
-    ALARM_2_DURATION, ENCODER_1, ENCODER_POLL_ALARM, ENCODER_POLL_DURATION, UART1_INST,
-};
+use crate::{info, interrupt, singleton, UART1_INST};
 
 //Handle UART data
 #[interrupt]

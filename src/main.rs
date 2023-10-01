@@ -13,16 +13,6 @@ use mcp4725::*;
 use panic_probe as _;
 use rp2040_hal::{
     clocks::init_clocks_and_plls,
-    gpio::bank0::Gpio12,
-    gpio::bank0::Gpio13,
-    gpio::bank0::Gpio14,
-    gpio::bank0::Gpio15,
-    gpio::bank0::Gpio16,
-    gpio::bank0::Gpio17,
-    gpio::bank0::Gpio20,
-    gpio::bank0::Gpio21,
-    gpio::bank0::Gpio8,
-    gpio::bank0::Gpio9,
     gpio::Pins,
     pac,
     pac::interrupt,
@@ -37,8 +27,8 @@ mod clocked_interrupts;
 mod encoder_interrupt;
 mod types;
 mod uart_interrupt;
-use rotary_encoder_embedded::{standard::StandardMode, Direction, RotaryEncoder};
-use types::{RotaryEncoder1Type, RotaryEncoder2Type, UartType};
+use rotary_encoder_embedded::{standard::StandardMode, RotaryEncoder};
+use types::{I2C0_Type, RotaryEncoder1Type, RotaryEncoder2Type, UartType};
 
 static mut UART1_INST: Mutex<RefCell<Option<UartType>>> = Mutex::new(RefCell::new(None));
 
@@ -63,6 +53,7 @@ static mut ALARM_2: Mutex<RefCell<Option<Alarm2>>> = Mutex::new(RefCell::new(Non
 static mut ENCODER_POLL_ALARM: Mutex<RefCell<Option<Alarm3>>> = Mutex::new(RefCell::new(None));
 
 static mut ENCODER_1: Mutex<RefCell<Option<RotaryEncoder1Type>>> = Mutex::new(RefCell::new(None));
+static mut I2C0_DEVICE: Mutex<RefCell<Option<I2C0Type>>> = Mutex::new(RefCell::new(None));
 
 #[entry]
 fn main() -> ! {
@@ -95,31 +86,24 @@ fn main() -> ! {
 
     let pins = Pins::new(pac.IO_BANK0, pac.PADS_BANK0, sio.gpio_bank0, &mut resets);
 
-    // I2C DAC
-    let dac_scl = pins.gpio21.into_function();
-    let dac_sda = pins.gpio20.into_function();
-    let i2c = I2C::new_controller(
-        pac.I2C0,
-        dac_sda,
-        dac_scl,
-        400.kHz(),
-        &mut resets,
-        125_000_000.Hz(),
-    );
+    // I2C0 Device
+    let scl = pins.gpio21.into_function();
+    let sda = pins.gpio20.into_function();
+    let i2c = I2C::new_controller(pac.I2C0, sda, scl, 400.kHz(), &mut resets, 125_000_000.Hz());
 
-    let mut dac = MCP4725::new(i2c, 0b010);
-    dac.set_dac(PowerDown::Normal, 0x0);
-    let i2c = dac.destroy();
+    // let mut dac = MCP4725::new(i2c, 0b010);
+    // dac.set_dac(PowerDown::Normal, 0x0);
+    // let i2c = dac.destroy();
 
-    let interface = I2CDisplayInterface::new(i2c);
-    let mut display =
-        Ssd1306::new(interface, DisplaySize128x32, DisplayRotation::Rotate0).into_terminal_mode();
-    display.init().unwrap();
-    display.clear();
-    display.print_char('b');
-    display.print_char('0');
-    display.print_char('l');
-    display.print_char('l');
+    // let interface = I2CDisplayInterface::new(i2c);
+    // let mut display =
+    //     Ssd1306::new(interface, DisplaySize128x32, DisplayRotation::Rotate0).into_terminal_mode();
+    // display.init().unwrap();
+    // display.clear();
+    // display.print_char('b');
+    // display.print_char('0');
+    // display.print_char('l');
+    // display.print_char('l');
 
     // UART0
     let uart_pins = (pins.gpio8.into_function(), pins.gpio9.into_function());
@@ -177,6 +161,7 @@ fn main() -> ! {
         };
         unsafe { ENCODER_1.borrow(cs).replace(Some(rotary_1)) };
         unsafe { UART1_INST.borrow(cs).replace(Some(uart)) };
+        unsafe { I2C0_DEVICE.borrow(cs).replace(Some(i2c)) };
         info!("alarm globals replaced");
         info!("unmasking interrupts");
         unsafe {
