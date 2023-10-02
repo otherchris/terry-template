@@ -4,7 +4,6 @@
 #![no_std]
 #![no_main]
 use core::cell::RefCell;
-use cortex_m::singleton;
 use critical_section::Mutex;
 use defmt::*;
 use defmt_rtt as _;
@@ -22,13 +21,12 @@ use rp2040_hal::{
     Clock, Sio, I2C,
 };
 use rp_pico::entry;
-use ssd1306::{mode::TerminalMode, prelude::*, I2CDisplayInterface, Ssd1306};
+use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306};
 mod clocked_interrupts;
 mod display_messages;
 mod encoder_interrupt;
 mod types;
 mod uart_interrupt;
-use display_messages::DISPLAY_OK;
 use rotary_encoder_embedded::{standard::StandardMode, RotaryEncoder};
 use types::ModuleState;
 
@@ -73,9 +71,8 @@ fn main() -> ! {
     let i2c1_device =
         I2C::new_controller(pac.I2C1, sda, scl, 400.kHz(), &mut resets, 125_000_000.Hz());
 
-    // let mut dac = MCP4725::new(i2c, 0b010);
-    // dac.set_dac(PowerDown::Normal, 0x0);
-    // let i2c = dac.destroy();
+    let mut dac = MCP4725::new(i2c1_device, 0b010);
+    dac.set_dac(PowerDown::Normal, 0x0);
 
     let display_scl = pins.gpio21.into_function();
     let display_sda = pins.gpio20.into_function();
@@ -135,7 +132,7 @@ fn main() -> ! {
                 alarm_2,
                 encoder_poll_alarm,
                 encoder_1,
-                i2c1_device,
+                dac,
                 uart_1,
                 display,
             }));

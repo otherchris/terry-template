@@ -1,6 +1,7 @@
 use crate::MicrosDurationU32;
 use crate::{pac::I2C0, pac::I2C1, Alarm0, Alarm1, Alarm2, Alarm3, I2C};
 use crate::{RotaryEncoder, StandardMode};
+use mcp4725::MCP4725;
 use rp2040_hal::{
     gpio::bank0::{Gpio12, Gpio13, Gpio14, Gpio15, Gpio18, Gpio19, Gpio20, Gpio21, Gpio8, Gpio9},
     gpio::{FunctionI2c, FunctionSioInput, FunctionUart, Pin, PullDown, PullUp},
@@ -15,6 +16,8 @@ use ssd1306::Ssd1306;
 pub type SdaPin = Pin<Gpio18, FunctionI2c, PullDown>;
 pub type SclPin = Pin<Gpio19, FunctionI2c, PullDown>;
 pub type I2C1Type = I2C<I2C1, (SdaPin, SclPin)>;
+
+pub type DacType = MCP4725<I2C1Type>;
 
 pub type DisplaySdaPin = Pin<Gpio20, FunctionI2c, PullDown>;
 pub type DisplaySclPin = Pin<Gpio21, FunctionI2c, PullDown>;
@@ -46,7 +49,7 @@ pub struct ModuleState {
     pub alarm_2: Alarm2,
     pub encoder_poll_alarm: Alarm3,
     pub encoder_1: RotaryEncoder1Type,
-    pub i2c1_device: I2C1Type,
+    pub dac: DacType,
     pub display: Ssd1306<I2CInterface<DisplayI2c>, DisplaySize128x32, TerminalMode>,
     pub uart_1: Uart1Type,
 }
