@@ -1,18 +1,22 @@
-use crate::{info, interrupt, singleton, UART1_INST};
+use crate::{interrupt, ModuleState, MODULE_STATE};
 
 //Handle UART data
 #[interrupt]
 fn UART1_IRQ() {
     critical_section::with(|cs| {
-        let uart = unsafe { UART1_INST.borrow(cs).take().unwrap() };
-        info!("here go");
-        info!("{}", uart.uart_is_readable());
-        if uart.uart_is_readable() {
-            let buf = singleton!(: [u8; 5] = [0; 5]).unwrap();
-            uart.read_full_blocking(buf).unwrap();
-            info!("{}", buf);
-        }
+        let module_state = unsafe { MODULE_STATE.borrow(cs).take().unwrap() };
+        let ModuleState { mut uart_1, .. } = module_state;
+        // if uart.uart_is_readable() {
+        //     let buf = singleton!(: [u8; 5] = [0; 5]).unwrap();
+        //     uart.read_full_blocking(buf).unwrap();
+        //     info!("{}", buf);
+        // }
 
-        unsafe { UART1_INST.borrow(cs).replace(Some(uart)) };
+        unsafe {
+            MODULE_STATE.borrow(cs).replace(Some(ModuleState {
+                uart_1,
+                ..module_state
+            }))
+        };
     })
 }

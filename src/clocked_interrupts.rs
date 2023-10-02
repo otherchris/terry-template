@@ -1,61 +1,68 @@
 use rotary_encoder_embedded::Direction;
 use rp2040_hal::timer::Alarm;
 
-use crate::{
-    info, interrupt, singleton, ALARM_0, ALARM_0_DURATION, ALARM_1, ALARM_1_DURATION, ALARM_2,
-    ALARM_2_DURATION, ENCODER_1, ENCODER_POLL_ALARM, ENCODER_POLL_DURATION, UART1_INST,
-};
+use crate::{interrupt, ModuleState, MODULE_STATE};
 
 #[interrupt]
 fn TIMER_IRQ_0() {
     // info!("alarm 0 fired and caught");
     critical_section::with(|cs| {
-        let alarm_0_duration = unsafe { ALARM_0_DURATION.borrow(cs).take().unwrap() };
-        let mut alarm_0 = unsafe { ALARM_0.borrow(cs).take().unwrap() };
+        let module_state = unsafe { MODULE_STATE.borrow(cs).take().unwrap() };
+        let ModuleState {
+            mut alarm_0_duration,
+            mut alarm_0,
+            ..
+        } = module_state;
         alarm_0.clear_interrupt();
         alarm_0.schedule(alarm_0_duration);
-        unsafe { ALARM_0.borrow(cs).replace(Some(alarm_0)) };
-        unsafe { ALARM_0_DURATION.borrow(cs).replace(Some(alarm_0_duration)) };
+        unsafe {
+            MODULE_STATE.borrow(cs).replace(Some(ModuleState {
+                alarm_0_duration,
+                alarm_0,
+                ..module_state
+            }))
+        }
     });
 }
 
 #[interrupt]
 fn TIMER_IRQ_1() {
     critical_section::with(|cs| {
-        let alarm_1_duration = unsafe { ALARM_1_DURATION.borrow(cs).take().unwrap() };
-        let mut alarm_1 = unsafe { ALARM_1.borrow(cs).take().unwrap() };
+        let module_state = unsafe { MODULE_STATE.borrow(cs).take().unwrap() };
+        let ModuleState {
+            mut alarm_1_duration,
+            mut alarm_1,
+            ..
+        } = module_state;
         alarm_1.clear_interrupt();
-        alarm_1.schedule(alarm_1_duration).ok();
-        unsafe { ALARM_1.borrow(cs).replace(Some(alarm_1)) };
-        unsafe { ALARM_1_DURATION.borrow(cs).replace(Some(alarm_1_duration)) };
+        alarm_1.schedule(alarm_1_duration);
+        unsafe {
+            MODULE_STATE.borrow(cs).replace(Some(ModuleState {
+                alarm_1_duration,
+                alarm_1,
+                ..module_state
+            }))
+        }
     });
 }
 
 #[interrupt]
 fn TIMER_IRQ_2() {
     critical_section::with(|cs| {
-        let alarm_2_duration = unsafe { ALARM_2_DURATION.borrow(cs).take().unwrap() };
-        let mut alarm_2 = unsafe { ALARM_2.borrow(cs).take().unwrap() };
+        let module_state = unsafe { MODULE_STATE.borrow(cs).take().unwrap() };
+        let ModuleState {
+            mut alarm_2_duration,
+            mut alarm_2,
+            ..
+        } = module_state;
         alarm_2.clear_interrupt();
-        alarm_2.schedule(alarm_2_duration).ok();
-        unsafe { ALARM_2.borrow(cs).replace(Some(alarm_2)) };
-        unsafe { ALARM_2_DURATION.borrow(cs).replace(Some(alarm_2_duration)) };
-    });
-}
-
-//Handle UART data
-#[interrupt]
-fn UART1_IRQ() {
-    critical_section::with(|cs| {
-        let uart = unsafe { UART1_INST.borrow(cs).take().unwrap() };
-        info!("here go");
-        info!("{}", uart.uart_is_readable());
-        if uart.uart_is_readable() {
-            let buf = singleton!(: [u8; 5] = [0; 5]).unwrap();
-            uart.read_full_blocking(buf).unwrap();
-            info!("{}", buf);
+        alarm_2.schedule(alarm_2_duration);
+        unsafe {
+            MODULE_STATE.borrow(cs).replace(Some(ModuleState {
+                alarm_2_duration,
+                alarm_2,
+                ..module_state
+            }))
         }
-
-        unsafe { UART1_INST.borrow(cs).replace(Some(uart)) };
-    })
+    });
 }

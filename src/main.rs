@@ -24,36 +24,17 @@ use rp2040_hal::{
 use rp_pico::entry;
 use ssd1306::{mode::TerminalMode, prelude::*, I2CDisplayInterface, Ssd1306};
 mod clocked_interrupts;
+mod display_messages;
 mod encoder_interrupt;
 mod types;
 mod uart_interrupt;
+use display_messages::DISPLAY_OK;
 use rotary_encoder_embedded::{standard::StandardMode, RotaryEncoder};
-use types::{I2C0_Type, RotaryEncoder1Type, RotaryEncoder2Type, UartType};
+use types::ModuleState;
 
-static mut UART1_INST: Mutex<RefCell<Option<UartType>>> = Mutex::new(RefCell::new(None));
-
-static ALARM_DEFAULT_DURATION_US: u32 = 100000;
-static ENCODER_POLL_DURATION_US: u32 = 2000;
-
-static mut ALARM_0_DURATION: Mutex<RefCell<Option<MicrosDurationU32>>> = Mutex::new(RefCell::new(
-    Some(MicrosDurationU32::micros(ALARM_DEFAULT_DURATION_US)),
-));
-static mut ALARM_1_DURATION: Mutex<RefCell<Option<MicrosDurationU32>>> = Mutex::new(RefCell::new(
-    Some(MicrosDurationU32::micros(ALARM_DEFAULT_DURATION_US)),
-));
-static mut ALARM_2_DURATION: Mutex<RefCell<Option<MicrosDurationU32>>> = Mutex::new(RefCell::new(
-    Some(MicrosDurationU32::micros(ALARM_DEFAULT_DURATION_US)),
-));
-static mut ENCODER_POLL_DURATION: Mutex<RefCell<Option<MicrosDurationU32>>> = Mutex::new(
-    RefCell::new(Some(MicrosDurationU32::micros(ENCODER_POLL_DURATION_US))),
-);
-static mut ALARM_0: Mutex<RefCell<Option<Alarm0>>> = Mutex::new(RefCell::new(None));
-static mut ALARM_1: Mutex<RefCell<Option<Alarm1>>> = Mutex::new(RefCell::new(None));
-static mut ALARM_2: Mutex<RefCell<Option<Alarm2>>> = Mutex::new(RefCell::new(None));
-static mut ENCODER_POLL_ALARM: Mutex<RefCell<Option<Alarm3>>> = Mutex::new(RefCell::new(None));
-
-static mut ENCODER_1: Mutex<RefCell<Option<RotaryEncoder1Type>>> = Mutex::new(RefCell::new(None));
-static mut I2C0_DEVICE: Mutex<RefCell<Option<I2C0Type>>> = Mutex::new(RefCell::new(None));
+static mut MODULE_STATE: Mutex<RefCell<Option<ModuleState>>> = Mutex::new(RefCell::new(None));
+static INITIAL_ALARM_DURATION: MicrosDurationU32 = MicrosDurationU32::micros(100000);
+static INITIAL_ENCODER_POLL_DURATION: MicrosDurationU32 = MicrosDurationU32::micros(2000);
 
 #[entry]
 fn main() -> ! {
@@ -87,83 +68,79 @@ fn main() -> ! {
     let pins = Pins::new(pac.IO_BANK0, pac.PADS_BANK0, sio.gpio_bank0, &mut resets);
 
     // I2C0 Device
-    let scl = pins.gpio21.into_function();
-    let sda = pins.gpio20.into_function();
-    let i2c = I2C::new_controller(pac.I2C0, sda, scl, 400.kHz(), &mut resets, 125_000_000.Hz());
+    let scl = pins.gpio19.into_function();
+    let sda = pins.gpio18.into_function();
+    let i2c1_device =
+        I2C::new_controller(pac.I2C1, sda, scl, 400.kHz(), &mut resets, 125_000_000.Hz());
 
     // let mut dac = MCP4725::new(i2c, 0b010);
     // dac.set_dac(PowerDown::Normal, 0x0);
     // let i2c = dac.destroy();
 
-    // let interface = I2CDisplayInterface::new(i2c);
-    // let mut display =
-    //     Ssd1306::new(interface, DisplaySize128x32, DisplayRotation::Rotate0).into_terminal_mode();
-    // display.init().unwrap();
-    // display.clear();
-    // display.print_char('b');
-    // display.print_char('0');
-    // display.print_char('l');
-    // display.print_char('l');
+    let display_scl = pins.gpio21.into_function();
+    let display_sda = pins.gpio20.into_function();
+    let i2c0_device = I2C::new_controller(
+        pac.I2C0,
+        display_sda,
+        display_scl,
+        400.kHz(),
+        &mut resets,
+        125_000_000.Hz(),
+    );
+    let interface = I2CDisplayInterface::new(i2c0_device);
+    let mut display =
+        Ssd1306::new(interface, DisplaySize128x32, DisplayRotation::Rotate0).into_terminal_mode();
+    display.init().unwrap();
+    display.clear();
 
     // UART0
     let uart_pins = (pins.gpio8.into_function(), pins.gpio9.into_function());
-    let mut uart = UartPeripheral::new(pac.UART1, uart_pins, &mut resets)
+    let mut uart_1 = UartPeripheral::new(pac.UART1, uart_pins, &mut resets)
         .enable(
             UartConfig::new(9600.Hz(), DataBits::Eight, None, StopBits::One),
             clocks.peripheral_clock.freq(),
         )
         .unwrap();
-    uart.enable_rx_interrupt();
+    uart_1.enable_rx_interrupt();
 
-    info!("set up rotaries");
     // Rotary Encoders
     let rotary_1_dt = pins.gpio15.into_pull_up_input();
     let rotary_1_clk = pins.gpio14.into_pull_up_input();
     // let rotary_2_dt = pins.gpio13.into_pull_up_input();
     // let rotary_2_clk = pins.gpio12.into_pull_up_input();
-    let rotary_1 = RotaryEncoder::new(rotary_1_dt, rotary_1_clk).into_standard_mode();
+    let encoder_1 = RotaryEncoder::new(rotary_1_dt, rotary_1_clk).into_standard_mode();
     // let rotary_2 = RotaryEncoder::new(rotary_2_dt, rotary_2_clk).into_standard_mode();
 
     // Gate pins
 
-    info!("going critical");
     critical_section::with(|cs| {
-        let alarm_0_duration = unsafe { ALARM_0_DURATION.borrow(cs).take().unwrap() };
-        info!("{}", alarm_0_duration.ticks());
-        let alarm_1_duration = unsafe { ALARM_1_DURATION.borrow(cs).take().unwrap() };
-        let alarm_2_duration = unsafe { ALARM_2_DURATION.borrow(cs).take().unwrap() };
-        let encoder_poll_duration = unsafe { ENCODER_POLL_DURATION.borrow(cs).take().unwrap() };
-        info!("durations done");
-        alarm_0.schedule(alarm_0_duration).ok();
+        alarm_0.schedule(INITIAL_ALARM_DURATION).ok();
         alarm_0.enable_interrupt();
-        alarm_1.schedule(alarm_1_duration).ok();
+        alarm_1.schedule(INITIAL_ALARM_DURATION).ok();
         alarm_1.enable_interrupt();
-        alarm_2.schedule(alarm_2_duration).ok();
+        alarm_2.schedule(INITIAL_ALARM_DURATION).ok();
         alarm_2.enable_interrupt();
-        encoder_poll_alarm.schedule(encoder_poll_duration).ok();
+        encoder_poll_alarm
+            .schedule(INITIAL_ENCODER_POLL_DURATION)
+            .ok();
         encoder_poll_alarm.enable_interrupt();
-        info!("alarms scheduled");
-        unsafe { ALARM_0.borrow(cs).replace(Some(alarm_0)) };
-        unsafe { ALARM_1.borrow(cs).replace(Some(alarm_1)) };
-        unsafe { ALARM_2.borrow(cs).replace(Some(alarm_2)) };
         unsafe {
-            ENCODER_POLL_ALARM
-                .borrow(cs)
-                .replace(Some(encoder_poll_alarm))
-        };
-        unsafe { ALARM_0_DURATION.borrow(cs).replace(Some(alarm_0_duration)) };
-        unsafe { ALARM_1_DURATION.borrow(cs).replace(Some(alarm_1_duration)) };
-        unsafe { ALARM_2_DURATION.borrow(cs).replace(Some(alarm_2_duration)) };
-        unsafe {
-            ENCODER_POLL_DURATION
-                .borrow(cs)
-                .replace(Some(encoder_poll_duration))
-        };
-        unsafe { ENCODER_1.borrow(cs).replace(Some(rotary_1)) };
-        unsafe { UART1_INST.borrow(cs).replace(Some(uart)) };
-        unsafe { I2C0_DEVICE.borrow(cs).replace(Some(i2c)) };
-        info!("alarm globals replaced");
-        info!("unmasking interrupts");
+            MODULE_STATE.borrow(cs).replace(Some(ModuleState {
+                alarm_0_duration: INITIAL_ALARM_DURATION,
+                alarm_1_duration: INITIAL_ALARM_DURATION,
+                alarm_2_duration: INITIAL_ALARM_DURATION,
+                encoder_poll_duration: INITIAL_ENCODER_POLL_DURATION,
+                alarm_0,
+                alarm_1,
+                alarm_2,
+                encoder_poll_alarm,
+                encoder_1,
+                i2c1_device,
+                uart_1,
+                display,
+            }));
+        }
+        // Don't unmask the interrupts until the Module State is in place
         unsafe {
             pac::NVIC::unmask(pac::Interrupt::TIMER_IRQ_0);
             pac::NVIC::unmask(pac::Interrupt::TIMER_IRQ_1);
